@@ -15,22 +15,23 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'POST') {
-      // Expecting JSON body
       const {
-        reservationId,         // external id like "R00101"
-        fullName,              // signer name
-        termsText,             // full T&Cs text shown to the user
-        termsVersion,          // e.g., "2025-08-27-v1"
-        signatureBase64,       // raw base64, no "data:image/png;base64," prefix
-        overwrite = false,     // if true, upsert; else 409 on duplicate
+        reservationId,     // external id like "R00101"
+        fullName,          // signer name
+        termsText,         // full T&Cs text shown to the user
+        termsVersion,      // e.g., "2025-08-27-v1"
+        signatureBase64,   // raw base64, no prefix
+        geoLocation,       // e.g., "37.7749,-122.4194"
+        overwrite = false,
       } = req.body || {};
 
-      // basic validation
       if (!reservationId || !fullName || !termsText || !termsVersion || !signatureBase64) {
-        return res.status(400).json({ error: 'reservationId, fullName, termsText, termsVersion, signatureBase64 are required' });
+        return res.status(400).json({
+          error: 'reservationId, fullName, termsText, termsVersion, signatureBase64 are required',
+        });
       }
 
-      // find the internal reservation UUID
+      // find reservation UUID
       const ridRows = await sql`
         SELECT id FROM public.reservations
         WHERE external_reservation_id = ${reservationId}
@@ -41,40 +42,41 @@ export default async function handler(req, res) {
 
       // convert base64 -> bytea
       const sigBytes = Buffer.from(signatureBase64, 'base64');
-      // keep payloads small (Vercel body limit ~5MB). Here: 2MB safety cap.
       if (sigBytes.length > 2 * 1024 * 1024) {
         return res.status(413).json({ error: 'Signature too large (max 2MB)' });
       }
 
-      // insert (or upsert) consent
+      // insert/upsert consent
       let row;
       if (overwrite) {
         [row] = await sql`
           INSERT INTO public.consents
-            (reservation_id, full_name, terms_and_conditions, terms_version, signature_image)
+            (reservation_id, full_name, terms_and_conditions, terms_version, geo_location, signature_image)
           VALUES
-            (${reservation_uuid}, ${fullName}, ${termsText}, ${termsVersion}, ${sigBytes})
+            (${reservation_uuid}, ${fullName}, ${termsText}, ${termsVersion}, ${geoLocation}, ${sigBytes})
           ON CONFLICT (reservation_id) DO UPDATE SET
             full_name = EXCLUDED.full_name,
             terms_and_conditions = EXCLUDED.terms_and_conditions,
             terms_version = EXCLUDED.terms_version,
+            geo_location = EXCLUDED.geo_location,
             signature_image = EXCLUDED.signature_image,
             created_at = now()
-          RETURNING id, created_at, terms_version
+          RETURNING id, created_at, terms_version, geo_location
         `;
       } else {
         try {
           [row] = await sql`
             INSERT INTO public.consents
-              (reservation_id, full_name, terms_and_conditions, terms_version, signature_image)
+              (reservation_id, full_name, terms_and_conditions, terms_version, geo_location, signature_image)
             VALUES
-              (${reservation_uuid}, ${fullName}, ${termsText}, ${termsVersion}, ${sigBytes})
-            RETURNING id, created_at, terms_version
+              (${reservation_uuid}, ${fullName}, ${termsText}, ${termsVersion}, ${geoLocation}, ${sigBytes})
+            RETURNING id, created_at, terms_version, geo_location
           `;
         } catch (e) {
-          // unique index on (reservation_id) -> duplicate
           if (e.code === '23505') {
-            return res.status(409).json({ error: 'Consent already exists for this reservation. Use overwrite=true to replace.' });
+            return res.status(409).json({
+              error: 'Consent already exists for this reservation. Use overwrite=true to replace.',
+            });
           }
           throw e;
         }
@@ -85,12 +87,12 @@ export default async function handler(req, res) {
         id: row.id,
         reservationId,
         termsVersion: row.terms_version,
+        geoLocation: row.geo_location,
         createdAt: row.created_at,
       });
     }
 
     if (req.method === 'GET') {
-      // GET /api/consents?reservationId=R00101&includeSignature=true
       const { reservationId, includeSignature } = req.query || {};
       if (!reservationId) return res.status(400).json({ error: 'reservationId query param is required' });
 
@@ -100,6 +102,7 @@ export default async function handler(req, res) {
           c.id,
           c.full_name               AS "fullName",
           c.terms_version           AS "termsVersion",
+          c.geo_location            AS "geoLocation",
           c.created_at              AS "createdAt",
           ${includeSignature ? sql`encode(c.signature_image,'base64')` : sql`NULL`} AS "signature"
         FROM public.consents c
