@@ -1,5 +1,5 @@
 // api/consents.js
-import { neon } from "@neondatabase/serverless";
+import { Pool } from "@neondatabase/serverless";
 import { verifyToken } from "../utils/auth.js";
 
 const cors = (res) => {
@@ -12,6 +12,8 @@ const nullIfEmpty = (v) => (v === "" || v === undefined ? null : v);
 const toNum = (v) => (v === "" || v == null ? null : Number(v));
 const toBool = (v) => (String(v).toLowerCase() === "true");
 
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
 export default async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -20,13 +22,11 @@ export default async function handler(req, res) {
   const user = await verifyToken(req, res);
   if (!user) return; // verifyToken already sent a 401 response
 
-  const sql = neon(process.env.DATABASE_URL);
-
   try {
     if (req.method === "POST") {
       const {
-        reservation,      // full reservation object from Signet
-        products = [],    // services array
+        reservation, // full reservation object from Signet
+        products = [], // services array
         fullName,
         termsText,
         termsVersion,
@@ -36,7 +36,9 @@ export default async function handler(req, res) {
       } = req.body || {};
 
       if (!reservation?.reservationId) {
-        return res.status(400).json({ error: "reservation.reservationId is required" });
+        return res
+          .status(400)
+          .json({ error: "reservation.reservationId is required" });
       }
       if (!fullName || !termsText || !termsVersion || !signatureBase64) {
         return res.status(400).json({
@@ -45,33 +47,29 @@ export default async function handler(req, res) {
       }
 
       // convert base64 -> bytea
-      const sigBytes = Buffer.from(signatureBase64.includes(",") ? signatureBase64.split(",")[1] : signatureBase64, "base64");
+      const sigBytes = Buffer.from(
+        signatureBase64.includes(",")
+          ? signatureBase64.split(",")[1]
+          : signatureBase64,
+        "base64"
+      );
       if (sigBytes.length > 2 * 1024 * 1024) {
         return res.status(413).json({ error: "Signature too large (max 2MB)" });
       }
 
-      // 🔒 Wrap everything in a transaction
-      const result = await sql.begin(async (tx) => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+
         // 1) Upsert reservation
-        const [resv] = await tx`
+        const resv = await client.query(
+          `
           INSERT INTO public.reservations (
             external_reservation_id, base_id, company, customer_account_number,
             tail_number, reservation_status, est_arrival_at, act_arrival_at,
             est_departure_at, act_departure_at, updated_at
           )
-          VALUES (
-            ${reservation.reservationId},
-            ${reservation.baseId},
-            ${reservation.reservationName || null},
-            ${reservation.customerAccountNumber || null},
-            ${reservation.tailNumber || null},
-            ${reservation.status},
-            ${nullIfEmpty(reservation.arrivalDetails?.estimatedArrivalTimeUTC)},
-            ${nullIfEmpty(reservation.arrivalDetails?.actualArrivalTimeUTC)},
-            ${nullIfEmpty(reservation.departureDetails?.estimatedDepartureTimeUTC)},
-            ${nullIfEmpty(reservation.departureDetails?.actualDepartureTimeUTC)},
-            now()
-          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())
           ON CONFLICT (external_reservation_id) DO UPDATE SET
             base_id = EXCLUDED.base_id,
             company = EXCLUDED.company,
@@ -84,44 +82,76 @@ export default async function handler(req, res) {
             act_departure_at = EXCLUDED.act_departure_at,
             updated_at = now()
           RETURNING id
-        `;
-        const reservation_uuid = resv.id;
+        `,
+          [
+            reservation.reservationId,
+            reservation.baseId,
+            reservation.reservationName || null,
+            reservation.customerAccountNumber || null,
+            reservation.tailNumber || null,
+            reservation.status,
+            nullIfEmpty(reservation.arrivalDetails?.estimatedArrivalTimeUTC),
+            nullIfEmpty(reservation.arrivalDetails?.actualArrivalTimeUTC),
+            nullIfEmpty(reservation.departureDetails?.estimatedDepartureTimeUTC),
+            nullIfEmpty(reservation.departureDetails?.actualDepartureTimeUTC),
+          ]
+        );
+        const reservation_uuid = resv.rows[0].id;
 
         // 2) Replace services
-        await tx`DELETE FROM public.reservation_services WHERE reservation_id = ${reservation_uuid}`;
+        await client.query(
+          "DELETE FROM public.reservation_services WHERE reservation_id = $1",
+          [reservation_uuid]
+        );
         for (const p of products) {
-          await tx`
+          await client.query(
+            `
             INSERT INTO public.reservation_services (
               reservation_id, product_id, product_name, product_status, quantity,
               service_date, subcase_id, for_arrival_or_departure, dsf_product_name,
               service_request_details, vendor_name, on_arrival, on_departure,
               phone_number, email_address, quoted_price, special_instruction_value,
               vendor_rep, crew_meal_count, pax_meal_count, crew_or_passenger, created_at
-            ) VALUES (
-              ${reservation_uuid}, ${p.productID}, ${p.productName}, ${p.productStatus},
-              ${toNum(p.quantity) || 1},
-              ${nullIfEmpty(p.serviceDateUTC)}, ${p.subcaseId || null}, ${p.forArrivalorDeparture || null},
-              ${p.dsfProductName || null}, ${p.serviceRequestDetails || null}, ${p.vendorName || null},
-              ${toBool(p.onArrival)}, ${toBool(p.onDeparture)},
-              ${p.phoneNumber || null}, ${p.emailAddress || null},
-              ${toNum(p.quotedPrice) || 0},
-              ${p.specialInstructionValue || null}, ${p.vendorRep || null},
-              ${toNum(p.crewMealCount)}, ${toNum(p.paxMealCount)},
-              ${p.crewOrPassanger || null}, now()
             )
-          `;
+            VALUES (
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,now()
+            )
+          `,
+            [
+              reservation_uuid,
+              p.productID,
+              p.productName,
+              p.productStatus,
+              toNum(p.quantity) || 1,
+              nullIfEmpty(p.serviceDateUTC),
+              p.subcaseId || null,
+              p.forArrivalorDeparture || null,
+              p.dsfProductName || null,
+              p.serviceRequestDetails || null,
+              p.vendorName || null,
+              toBool(p.onArrival),
+              toBool(p.onDeparture),
+              p.phoneNumber || null,
+              p.emailAddress || null,
+              toNum(p.quotedPrice) || 0,
+              p.specialInstructionValue || null,
+              p.vendorRep || null,
+              toNum(p.crewMealCount),
+              toNum(p.paxMealCount),
+              p.crewOrPassanger || null,
+            ]
+          );
         }
 
         // 3) Insert/Upsert consent
         let consentRow;
         if (overwrite) {
-          [consentRow] = await tx`
+          const consent = await client.query(
+            `
             INSERT INTO public.consents (
               reservation_id, full_name, terms_and_conditions, terms_version, geo_location, signature_image, updated_at
             )
-            VALUES (
-              ${reservation_uuid}, ${fullName}, ${termsText}, ${termsVersion}, ${geoLocation}, ${sigBytes}, now()
-            )
+            VALUES ($1,$2,$3,$4,$5,$6,now())
             ON CONFLICT (reservation_id) DO UPDATE SET
               full_name = EXCLUDED.full_name,
               terms_and_conditions = EXCLUDED.terms_and_conditions,
@@ -130,74 +160,66 @@ export default async function handler(req, res) {
               signature_image = EXCLUDED.signature_image,
               updated_at = now()
             RETURNING id, created_at, updated_at, terms_version, geo_location
-          `;
+          `,
+            [
+              reservation_uuid,
+              fullName,
+              termsText,
+              termsVersion,
+              geoLocation,
+              sigBytes,
+            ]
+          );
+          consentRow = consent.rows[0];
         } else {
           try {
-            [consentRow] = await tx`
+            const consent = await client.query(
+              `
               INSERT INTO public.consents (
                 reservation_id, full_name, terms_and_conditions, terms_version, geo_location, signature_image
               )
-              VALUES (
-                ${reservation_uuid}, ${fullName}, ${termsText}, ${termsVersion}, ${geoLocation}, ${sigBytes}
-              )
+              VALUES ($1,$2,$3,$4,$5,$6)
               RETURNING id, created_at, terms_version, geo_location
-            `;
+            `,
+              [reservation_uuid, fullName, termsText, termsVersion, geoLocation, sigBytes]
+            );
+            consentRow = consent.rows[0];
           } catch (e) {
             if (e.code === "23505") {
-              throw Object.assign(new Error("Consent already exists for this reservation. Use overwrite=true to replace."), { http: 409 });
+              throw Object.assign(
+                new Error(
+                  "Consent already exists for this reservation. Use overwrite=true to replace."
+                ),
+                { http: 409 }
+              );
             }
             throw e;
           }
         }
 
-        return { reservation_uuid, consentRow };
-      });
+        await client.query("COMMIT");
 
-      return res.status(201).json({
-        ok: true,
-        reservationId: reservation.reservationId,
-        consent: {
-          id: result.consentRow.id,
-          termsVersion: result.consentRow.terms_version,
-          geoLocation: result.consentRow.geo_location,
-          createdAt: result.consentRow.created_at,
-          updatedAt: result.consentRow.updated_at,
-        },
-        user, // decoded JWT payload
-      });
+        return res.status(201).json({
+          ok: true,
+          reservationId: reservation.reservationId,
+          consent: {
+            id: consentRow.id,
+            termsVersion: consentRow.terms_version,
+            geoLocation: consentRow.geo_location,
+            createdAt: consentRow.created_at,
+            updatedAt: consentRow.updated_at,
+          },
+          user, // decoded JWT payload
+        });
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
     }
 
-    // keep your GET for reading consents
-    if (req.method === "GET") {
-      const { reservationId, includeSignature } = req.query || {};
-      if (!reservationId)
-        return res.status(400).json({ error: "reservationId query param is required" });
-
-      const rows = await sql`
-        SELECT
-          r.external_reservation_id AS "reservationId",
-          c.id,
-          c.full_name               AS "fullName",
-          c.terms_version           AS "termsVersion",
-          c.geo_location            AS "geoLocation",
-          c.created_at              AS "createdAt",
-          ${includeSignature ? sql`encode(c.signature_image,'base64')` : sql`NULL`} AS "signature"
-        FROM public.consents c
-        JOIN public.reservations r ON r.id = c.reservation_id
-        WHERE r.external_reservation_id = ${reservationId}
-        LIMIT 1
-      `;
-
-      if (rows.length === 0)
-        return res.status(404).json({ error: "Consent not found" });
-
-      return res.status(200).json({
-        ...rows[0],
-        user, // decoded JWT payload
-      });
-    }
-
-    res.setHeader("Allow", "GET,POST,OPTIONS");
+    res.setHeader("Allow", "POST,OPTIONS");
     return res.status(405).json({ error: "Method Not Allowed" });
   } catch (err) {
     const status = err.http || 500;
