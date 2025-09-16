@@ -10,7 +10,7 @@ const cors = (res) => {
 
 const nullIfEmpty = (v) => (v === "" || v === undefined ? null : v);
 const toNum = (v) => (v === "" || v == null ? null : Number(v));
-const toBool = (v) => (String(v).toLowerCase() === "true");
+const toBool = (v) => String(v).toLowerCase() === "true";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -25,8 +25,8 @@ export default async function handler(req, res) {
   try {
     if (req.method === "POST") {
       const {
-        reservation, // full reservation object from Signet
-        products = [], // services array
+        reservation,      // full Signet reservation object
+        products = [],    // services array
         fullName,
         termsText,
         termsVersion,
@@ -35,10 +35,20 @@ export default async function handler(req, res) {
         overwrite = false,
       } = req.body || {};
 
-      if (!reservation?.reservationId) {
-        return res
-          .status(400)
-          .json({ error: "reservation.reservationId is required" });
+      // Be resilient to casing differences from upstream
+      const baseId =
+        reservation?.baseId ?? reservation?.baseid ?? null;
+      const reservationNo =
+        reservation?.reservationId ?? reservation?.reservationid ?? null;
+      const reservationName =
+        reservation?.companyName ?? reservation?.reservationName ?? null;
+      const customerAccountNumber =
+        reservation?.customerAccountNumber ?? null;
+      const tailNumber = reservation?.tailNumber ?? null;
+      const status = reservation?.status ?? reservation?.reservationStatus ?? null;
+
+      if (!reservationNo) {
+        return res.status(400).json({ error: "reservation.reservationId is required" });
       }
       if (!fullName || !termsText || !termsVersion || !signatureBase64) {
         return res.status(400).json({
@@ -46,7 +56,7 @@ export default async function handler(req, res) {
         });
       }
 
-      // convert base64 -> bytea
+      // convert base64 -> bytea (strip data URL prefix if present)
       const sigBytes = Buffer.from(
         signatureBase64.includes(",")
           ? signatureBase64.split(",")[1]
@@ -61,21 +71,29 @@ export default async function handler(req, res) {
       try {
         await client.query("BEGIN");
 
-        // 1) Upsert reservation
+        // 1) Upsert reservation (schema-correct)
         const resv = await client.query(
           `
           INSERT INTO public.reservations (
-            external_reservation_id, base_id, company, customer_account_number,
-            tail_number, reservation_status, est_arrival_at, act_arrival_at,
-            est_departure_at, act_departure_at, updated_at
+            base_id,
+            reservation_no,
+            reservation_name,
+            customer_account_number,
+            tail_number,
+            status,
+            est_arrival_at,
+            act_arrival_at,
+            est_departure_at,
+            act_departure_at,
+            updated_at
           )
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())
-          ON CONFLICT (external_reservation_id) DO UPDATE SET
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now())
+          ON CONFLICT (reservation_no) DO UPDATE SET
             base_id = EXCLUDED.base_id,
-            company = EXCLUDED.company,
+            reservation_name = EXCLUDED.reservation_name,
             customer_account_number = EXCLUDED.customer_account_number,
             tail_number = EXCLUDED.tail_number,
-            reservation_status = EXCLUDED.reservation_status,
+            status = EXCLUDED.status,
             est_arrival_at = EXCLUDED.est_arrival_at,
             act_arrival_at = EXCLUDED.act_arrival_at,
             est_departure_at = EXCLUDED.est_departure_at,
@@ -84,16 +102,16 @@ export default async function handler(req, res) {
           RETURNING id
         `,
           [
-            reservation.reservationId,
-            reservation.baseId,
-            reservation.reservationName || null,
-            reservation.customerAccountNumber || null,
-            reservation.tailNumber || null,
-            reservation.status,
-            nullIfEmpty(reservation.arrivalDetails?.estimatedArrivalTimeUTC),
-            nullIfEmpty(reservation.arrivalDetails?.actualArrivalTimeUTC),
-            nullIfEmpty(reservation.departureDetails?.estimatedDepartureTimeUTC),
-            nullIfEmpty(reservation.departureDetails?.actualDepartureTimeUTC),
+            baseId,
+            reservationNo,
+            reservationName, // NOT NULL in schema; make sure upstream sends at least empty string if truly unknown
+            customerAccountNumber,
+            tailNumber,
+            status,
+            nullIfEmpty(reservation?.arrivalDetails?.estimatedArrivalTimeUTC),
+            nullIfEmpty(reservation?.arrivalDetails?.actualArrivalTimeUTC),
+            nullIfEmpty(reservation?.departureDetails?.estimatedDepartureTimeUTC),
+            nullIfEmpty(reservation?.departureDetails?.actualDepartureTimeUTC),
           ]
         );
         const reservation_uuid = resv.rows[0].id;
@@ -114,31 +132,31 @@ export default async function handler(req, res) {
               vendor_rep, crew_meal_count, pax_meal_count, crew_or_passenger, created_at
             )
             VALUES (
-              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,now()
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21, now()
             )
           `,
             [
               reservation_uuid,
-              p.productID,
-              p.productName,
-              p.productStatus,
-              toNum(p.quantity) || 1,
+              p.productID ?? null,
+              p.productName, // NOT NULL per schema
+              p.productStatus ?? null,
+              toNum(p.quantity) ?? 1,
               nullIfEmpty(p.serviceDateUTC),
-              p.subcaseId || null,
-              p.forArrivalorDeparture || null,
-              p.dsfProductName || null,
-              p.serviceRequestDetails || null,
-              p.vendorName || null,
+              p.subcaseId ?? null,
+              p.forArrivalorDeparture ?? null,
+              p.dsfProductName ?? null,
+              p.serviceRequestDetails ?? null,
+              p.vendorName ?? null,
               toBool(p.onArrival),
               toBool(p.onDeparture),
-              p.phoneNumber || null,
-              p.emailAddress || null,
-              toNum(p.quotedPrice) || 0,
-              p.specialInstructionValue || null,
-              p.vendorRep || null,
+              p.phoneNumber ?? null,
+              p.emailAddress ?? null,
+              toNum(p.quotedPrice) ?? 0,
+              p.specialInstructionValue ?? null,
+              p.vendorRep ?? null,
               toNum(p.crewMealCount),
               toNum(p.paxMealCount),
-              p.crewOrPassanger || null,
+              p.crewOrPassanger ?? null, // upstream typo retained; maps to crew_or_passenger
             ]
           );
         }
@@ -149,26 +167,18 @@ export default async function handler(req, res) {
           const consent = await client.query(
             `
             INSERT INTO public.consents (
-              reservation_id, full_name, terms_and_conditions, terms_version, geo_location, signature_image, updated_at
+              reservation_id, full_name, terms_and_conditions, terms_version, geo_location, signature_image, created_at
             )
-            VALUES ($1,$2,$3,$4,$5,$6,now())
+            VALUES ($1,$2,$3,$4,$5,$6, now())
             ON CONFLICT (reservation_id) DO UPDATE SET
               full_name = EXCLUDED.full_name,
               terms_and_conditions = EXCLUDED.terms_and_conditions,
               terms_version = EXCLUDED.terms_version,
               geo_location = EXCLUDED.geo_location,
-              signature_image = EXCLUDED.signature_image,
-              updated_at = now()
-            RETURNING id, created_at, updated_at, terms_version, geo_location
+              signature_image = EXCLUDED.signature_image
+            RETURNING id, created_at, terms_version, geo_location
           `,
-            [
-              reservation_uuid,
-              fullName,
-              termsText,
-              termsVersion,
-              geoLocation,
-              sigBytes,
-            ]
+            [reservation_uuid, fullName, termsText, termsVersion, geoLocation, sigBytes]
           );
           consentRow = consent.rows[0];
         } else {
@@ -186,10 +196,9 @@ export default async function handler(req, res) {
             consentRow = consent.rows[0];
           } catch (e) {
             if (e.code === "23505") {
+              // unique (reservation_id)
               throw Object.assign(
-                new Error(
-                  "Consent already exists for this reservation. Use overwrite=true to replace."
-                ),
+                new Error("Consent already exists for this reservation. Use overwrite=true to replace."),
                 { http: 409 }
               );
             }
@@ -201,13 +210,12 @@ export default async function handler(req, res) {
 
         return res.status(201).json({
           ok: true,
-          reservationId: reservation.reservationId,
+          reservationId: reservationNo,
           consent: {
             id: consentRow.id,
             termsVersion: consentRow.terms_version,
             geoLocation: consentRow.geo_location,
             createdAt: consentRow.created_at,
-            updatedAt: consentRow.updated_at,
           },
           user, // decoded JWT payload
         });
