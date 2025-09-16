@@ -8,7 +8,10 @@ const client = jwksClient({
 
 function getKey(header, callback) {
   client.getSigningKey(header.kid, (err, key) => {
-    if (err) return callback(err);
+    if (err) {
+      console.error("❌ JWKS key fetch error:", err);
+      return callback(err);
+    }
     const signingKey = key.getPublicKey();
     callback(null, signingKey);
   });
@@ -23,6 +26,22 @@ export async function verifyToken(req, res) {
 
   const token = authHeader.split(" ")[1];
 
+  // 🪵 Log decoded header/payload without verifying
+  const decodedUnverified = jwt.decode(token, { complete: true });
+  console.log("🔎 Decoded JWT (unverified):", JSON.stringify(decodedUnverified, null, 2));
+
+  if (!decodedUnverified) {
+    res.status(401).json({ error: "Invalid JWT format" });
+    return null;
+  }
+
+  const { header, payload } = decodedUnverified;
+  console.log("🔑 Token kid:", header.kid);
+  console.log("📛 Token aud:", payload.aud);
+  console.log("🏢 Token iss:", payload.iss);
+  console.log("👤 Token sub:", payload.sub);
+  console.log("⏰ Token exp:", new Date(payload.exp * 1000).toISOString());
+
   return new Promise((resolve) => {
     jwt.verify(
       token,
@@ -34,7 +53,7 @@ export async function verifyToken(req, res) {
       },
       (err, decoded) => {
         if (err) {
-          console.error("JWT verification failed:", err.message);
+          console.error("❌ JWT verification failed:", err.message);
           res.status(401).json({
             error:
               err.name === "TokenExpiredError"
@@ -43,6 +62,7 @@ export async function verifyToken(req, res) {
           });
           resolve(null);
         } else {
+          console.log("✅ JWT verified successfully for user:", decoded.sub);
           resolve(decoded);
         }
       }
