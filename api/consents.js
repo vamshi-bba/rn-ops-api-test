@@ -23,10 +23,13 @@ export default async function handler(req, res) {
   if (!user) return; // verifyToken already sent a 401 response
 
   try {
+    // ------------------------------------------------------------------------
+    // POST: Insert/Update reservation, services, consent
+    // ------------------------------------------------------------------------
     if (req.method === "POST") {
       const {
-        reservation,      // full Signet reservation object
-        products = [],    // services array
+        reservation, // full Signet reservation object
+        products = [], // services array
         fullName,
         termsText,
         termsVersion,
@@ -35,9 +38,7 @@ export default async function handler(req, res) {
         overwrite = false,
       } = req.body || {};
 
-      // Be resilient to casing differences from upstream
-      const baseId =
-        reservation?.baseId ?? reservation?.baseid ?? null;
+      const baseId = reservation?.baseId ?? reservation?.baseid ?? null;
       const reservationNo =
         reservation?.reservationId ?? reservation?.reservationid ?? null;
       const reservationName =
@@ -45,18 +46,22 @@ export default async function handler(req, res) {
       const customerAccountNumber =
         reservation?.customerAccountNumber ?? null;
       const tailNumber = reservation?.tailNumber ?? null;
-      const status = reservation?.status ?? reservation?.reservationStatus ?? null;
+      const status =
+        reservation?.status ?? reservation?.reservationStatus ?? null;
 
       if (!reservationNo) {
-        return res.status(400).json({ error: "reservation.reservationId is required" });
+        return res
+          .status(400)
+          .json({ error: "reservation.reservationId is required" });
       }
       if (!fullName || !termsText || !termsVersion || !signatureBase64) {
         return res.status(400).json({
-          error: "fullName, termsText, termsVersion, signatureBase64 are required",
+          error:
+            "fullName, termsText, termsVersion, signatureBase64 are required",
         });
       }
 
-      // convert base64 -> bytea (strip data URL prefix if present)
+      // convert base64 -> bytea
       const sigBytes = Buffer.from(
         signatureBase64.includes(",")
           ? signatureBase64.split(",")[1]
@@ -64,14 +69,16 @@ export default async function handler(req, res) {
         "base64"
       );
       if (sigBytes.length > 2 * 1024 * 1024) {
-        return res.status(413).json({ error: "Signature too large (max 2MB)" });
+        return res
+          .status(413)
+          .json({ error: "Signature too large (max 2MB)" });
       }
 
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
 
-        // 1) Upsert reservation (schema-correct)
+        // 1) Upsert reservation
         const resv = await client.query(
           `
           INSERT INTO public.reservations (
@@ -104,7 +111,7 @@ export default async function handler(req, res) {
           [
             baseId,
             reservationNo,
-            reservationName, // NOT NULL in schema; make sure upstream sends at least empty string if truly unknown
+            reservationName,
             customerAccountNumber,
             tailNumber,
             status,
@@ -138,7 +145,7 @@ export default async function handler(req, res) {
             [
               reservation_uuid,
               p.productID ?? null,
-              p.productName, // NOT NULL per schema
+              p.productName,
               p.productStatus ?? null,
               toNum(p.quantity) ?? 1,
               nullIfEmpty(p.serviceDateUTC),
@@ -156,7 +163,7 @@ export default async function handler(req, res) {
               p.vendorRep ?? null,
               toNum(p.crewMealCount),
               toNum(p.paxMealCount),
-              p.crewOrPassanger ?? null, // upstream typo retained; maps to crew_or_passenger
+              p.crewOrPassanger ?? null,
             ]
           );
         }
@@ -196,7 +203,6 @@ export default async function handler(req, res) {
             consentRow = consent.rows[0];
           } catch (e) {
             if (e.code === "23505") {
-              // unique (reservation_id)
               throw Object.assign(
                 new Error("Consent already exists for this reservation. Use overwrite=true to replace."),
                 { http: 409 }
@@ -217,7 +223,7 @@ export default async function handler(req, res) {
             geoLocation: consentRow.geo_location,
             createdAt: consentRow.created_at,
           },
-          user, // decoded JWT payload
+          user,
         });
       } catch (err) {
         await client.query("ROLLBACK");
@@ -227,11 +233,126 @@ export default async function handler(req, res) {
       }
     }
 
-    res.setHeader("Allow", "POST,OPTIONS");
+    // ------------------------------------------------------------------------
+    // GET: Fetch reservation, services, consent
+    // ------------------------------------------------------------------------
+    if (req.method === "GET") {
+      const { reservationId, includeSignature } = req.query || {};
+      if (!reservationId) {
+        return res
+          .status(400)
+          .json({ error: "reservationId query param is required" });
+      }
+
+      const client = await pool.connect();
+      try {
+        const result = await client.query(
+          `
+          SELECT
+            r.id                       AS reservation_uuid,
+            r.base_id,
+            r.reservation_no,
+            r.reservation_name,
+            r.customer_account_number,
+            r.tail_number,
+            r.status,
+            r.reservation_type,
+            r.created_at,
+            r.est_arrival_at,
+            r.act_arrival_at,
+            r.est_departure_at,
+            r.act_departure_at,
+            c.id                       AS consent_id,
+            c.full_name,
+            c.terms_version,
+            c.geo_location,
+            c.created_at               AS consent_created_at,
+            ${includeSignature ? "encode(c.signature_image,'base64')" : "NULL"} AS signature,
+            rs.id                      AS service_id,
+            rs.product_id,
+            rs.product_name,
+            rs.product_status,
+            rs.quantity,
+            rs.service_date,
+            rs.vendor_name,
+            rs.quoted_price,
+            rs.special_instruction_value
+          FROM public.reservations r
+          LEFT JOIN public.consents c ON c.reservation_id = r.id
+          LEFT JOIN public.reservation_services rs ON rs.reservation_id = r.id
+          WHERE r.reservation_no = $1
+          ORDER BY rs.created_at ASC
+          `,
+          [reservationId]
+        );
+
+        if (result.rows.length === 0) {
+          return res
+            .status(404)
+            .json({ error: "Reservation or consent not found" });
+        }
+
+        const rows = result.rows;
+        const reservation = {
+          reservationId: rows[0].reservation_no,
+          baseId: rows[0].base_id,
+          reservationName: rows[0].reservation_name,
+          customerAccountNumber: rows[0].customer_account_number,
+          tailNumber: rows[0].tail_number,
+          status: rows[0].status,
+          reservationType: rows[0].reservation_type,
+          createdAt: rows[0].created_at,
+          estimatedArrival: rows[0].est_arrival_at,
+          actualArrival: rows[0].act_arrival_at,
+          estimatedDeparture: rows[0].est_departure_at,
+          actualDeparture: rows[0].act_departure_at,
+        };
+
+        const consent = rows[0].consent_id
+          ? {
+              id: rows[0].consent_id,
+              fullName: rows[0].full_name,
+              termsVersion: rows[0].terms_version,
+              geoLocation: rows[0].geo_location,
+              createdAt: rows[0].consent_created_at,
+              signature: rows[0].signature,
+            }
+          : null;
+
+        const services = [];
+        for (const row of rows) {
+          if (row.service_id) {
+            services.push({
+              id: row.service_id,
+              productId: row.product_id,
+              productName: row.product_name,
+              productStatus: row.product_status,
+              quantity: row.quantity,
+              serviceDate: row.service_date,
+              vendorName: row.vendor_name,
+              quotedPrice: row.quoted_price,
+              specialInstruction: row.special_instruction_value,
+            });
+          }
+        }
+
+        return res.status(200).json({
+          reservation,
+          services,
+          consent,
+        });
+      } finally {
+        client.release();
+      }
+    }
+
+    res.setHeader("Allow", "GET,POST,OPTIONS");
     return res.status(405).json({ error: "Method Not Allowed" });
   } catch (err) {
     const status = err.http || 500;
     console.error("consents API error", err);
-    return res.status(status).json({ error: err.message || "Server error" });
+    return res
+      .status(status)
+      .json({ error: err.message || "Server error" });
   }
 }
