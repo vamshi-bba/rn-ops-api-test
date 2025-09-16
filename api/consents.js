@@ -1,3 +1,4 @@
+// api/consents.js
 import { neon } from "@neondatabase/serverless";
 import { verifyToken } from "../utils/auth";
 
@@ -12,20 +13,20 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   // 🔒 Verify Microsoft Entra JWT
-  const user = verifyToken(req, res);
-  if (!user) return; // response already sent if invalid
+  const user = await verifyToken(req, res);
+  if (!user) return; // verifyToken already sent a 401 response
 
   const sql = neon(process.env.DATABASE_URL);
 
   try {
     if (req.method === "POST") {
       const {
-        reservationId, // external id like "R00101"
-        fullName, // signer name
-        termsText, // full T&Cs text shown to the user
-        termsVersion, // e.g., "2025-08-27-v1"
-        signatureBase64, // raw base64, no prefix
-        geoLocation, // e.g., "37.7749,-122.4194"
+        reservationId,     // external id like "R00101"
+        fullName,          // signer name
+        termsText,         // full T&Cs text shown to the user
+        termsVersion,      // e.g., "2025-08-27-v1"
+        signatureBase64,   // raw base64, no prefix
+        geoLocation,       // e.g., "37.7749,-122.4194"
         overwrite = false,
       } = req.body || {};
 
@@ -94,7 +95,7 @@ export default async function handler(req, res) {
         termsVersion: row.terms_version,
         geoLocation: row.geo_location,
         createdAt: row.created_at,
-        user,
+        user, // decoded JWT payload
       });
     }
 
@@ -123,7 +124,7 @@ export default async function handler(req, res) {
 
       return res.status(200).json({
         ...rows[0],
-        user,
+        user, // decoded JWT payload
       });
     }
 

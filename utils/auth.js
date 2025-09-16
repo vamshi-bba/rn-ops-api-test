@@ -1,3 +1,4 @@
+// utils/auth.js
 import jwt from "jsonwebtoken";
 import jwksClient from "jwks-rsa";
 
@@ -13,7 +14,7 @@ function getKey(header, callback) {
   });
 }
 
-export function verifyToken(req, res) {
+export async function verifyToken(req, res) {
   const authHeader = req.headers["authorization"];
   if (!authHeader?.startsWith("Bearer ")) {
     res.status(401).json({ error: "Missing or invalid Authorization header" });
@@ -22,16 +23,29 @@ export function verifyToken(req, res) {
 
   const token = authHeader.split(" ")[1];
 
-  try {
-    const decoded = jwt.verify(token, getKey, {
-      algorithms: ["RS256"],
-      audience: process.env.AZURE_CLIENT_ID,
-      issuer: `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}/v2.0`,
-    });
-    return decoded;
-  } catch (err) {
-    console.error("JWT verification failed:", err);
-    res.status(401).json({ error: "Invalid or expired token" });
-    return null;
-  }
+  return new Promise((resolve) => {
+    jwt.verify(
+      token,
+      getKey,
+      {
+        algorithms: ["RS256"],
+        audience: process.env.AZURE_CLIENT_ID,
+        issuer: `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}/v2.0`,
+      },
+      (err, decoded) => {
+        if (err) {
+          console.error("JWT verification failed:", err.message);
+          res.status(401).json({
+            error:
+              err.name === "TokenExpiredError"
+                ? "Token expired"
+                : "Invalid or expired token",
+          });
+          resolve(null);
+        } else {
+          resolve(decoded);
+        }
+      }
+    );
+  });
 }

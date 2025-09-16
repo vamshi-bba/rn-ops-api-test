@@ -38,13 +38,13 @@ export default async function handler(req, res) {
   }
 
   // 🔒 Verify Microsoft Entra JWT
-  const user = verifyToken(req, res);
-  if (!user) return; // stop if invalid — verifyToken already sent response
+  const user = await verifyToken(req, res);
+  if (!user) return; // verifyToken already sent a 401 response
 
   try {
     const sql = neon(process.env.DATABASE_URL);
 
-    // --- Extract query params from request ---
+    // --- Extract query params ---
     const { requestorId, companyAccountNumber, startDate, endDate } = req.query;
     if (!requestorId || !companyAccountNumber || !startDate || !endDate) {
       return res.status(400).json({
@@ -111,7 +111,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       data,
-      user,
+      user, // decoded JWT payload
     });
   } catch (err) {
     console.error("fetchReservations error:", err);
