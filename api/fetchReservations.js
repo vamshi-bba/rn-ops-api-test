@@ -1,6 +1,6 @@
 // api/fetchReservations.js
 import { neon } from "@neondatabase/serverless";
-import { verifyToken } from "../utils/auth";
+import { verifyToken } from "../utils/auth.js";
 
 const cors = (res) => {
   res.setHeader("Access-Control-Allow-Origin", process.env.ALLOW_ORIGIN || "*");
