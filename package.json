@@ -3,13 +3,17 @@
   "version": "1.0.0",
   "type": "module",
   "private": true,
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "vercel dev",
     "start": "node api/health.js",
     "deploy": "vercel --prod"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.0.1"
+    "@neondatabase/serverless": "^1.0.1",
+    "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^3.2.0"
   }
 }

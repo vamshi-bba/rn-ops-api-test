@@ -1,33 +1,37 @@
-// api/consents.js
-import { neon } from '@neondatabase/serverless';
+import { neon } from "@neondatabase/serverless";
+import { verifyToken } from "../utils/auth";
 
 const cors = (res) => {
-  res.setHeader('Access-Control-Allow-Origin', process.env.ALLOW_ORIGIN || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader("Access-Control-Allow-Origin", process.env.ALLOW_ORIGIN || "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 };
 
 export default async function handler(req, res) {
   cors(res);
-  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method === "OPTIONS") return res.status(200).end();
+
+  // 🔒 Verify Microsoft Entra JWT
+  const user = verifyToken(req, res);
+  if (!user) return; // response already sent if invalid
 
   const sql = neon(process.env.DATABASE_URL);
 
   try {
-    if (req.method === 'POST') {
+    if (req.method === "POST") {
       const {
-        reservationId,     // external id like "R00101"
-        fullName,          // signer name
-        termsText,         // full T&Cs text shown to the user
-        termsVersion,      // e.g., "2025-08-27-v1"
-        signatureBase64,   // raw base64, no prefix
-        geoLocation,       // e.g., "37.7749,-122.4194"
+        reservationId, // external id like "R00101"
+        fullName, // signer name
+        termsText, // full T&Cs text shown to the user
+        termsVersion, // e.g., "2025-08-27-v1"
+        signatureBase64, // raw base64, no prefix
+        geoLocation, // e.g., "37.7749,-122.4194"
         overwrite = false,
       } = req.body || {};
 
       if (!reservationId || !fullName || !termsText || !termsVersion || !signatureBase64) {
         return res.status(400).json({
-          error: 'reservationId, fullName, termsText, termsVersion, signatureBase64 are required',
+          error: "reservationId, fullName, termsText, termsVersion, signatureBase64 are required",
         });
       }
 
@@ -37,13 +41,14 @@ export default async function handler(req, res) {
         WHERE external_reservation_id = ${reservationId}
         LIMIT 1
       `;
-      if (ridRows.length === 0) return res.status(404).json({ error: 'Reservation not found' });
+      if (ridRows.length === 0)
+        return res.status(404).json({ error: "Reservation not found" });
       const reservation_uuid = ridRows[0].id;
 
       // convert base64 -> bytea
-      const sigBytes = Buffer.from(signatureBase64, 'base64');
+      const sigBytes = Buffer.from(signatureBase64, "base64");
       if (sigBytes.length > 2 * 1024 * 1024) {
-        return res.status(413).json({ error: 'Signature too large (max 2MB)' });
+        return res.status(413).json({ error: "Signature too large (max 2MB)" });
       }
 
       // insert/upsert consent
@@ -73,9 +78,9 @@ export default async function handler(req, res) {
             RETURNING id, created_at, terms_version, geo_location
           `;
         } catch (e) {
-          if (e.code === '23505') {
+          if (e.code === "23505") {
             return res.status(409).json({
-              error: 'Consent already exists for this reservation. Use overwrite=true to replace.',
+              error: "Consent already exists for this reservation. Use overwrite=true to replace.",
             });
           }
           throw e;
@@ -89,12 +94,14 @@ export default async function handler(req, res) {
         termsVersion: row.terms_version,
         geoLocation: row.geo_location,
         createdAt: row.created_at,
+        user,
       });
     }
 
-    if (req.method === 'GET') {
+    if (req.method === "GET") {
       const { reservationId, includeSignature } = req.query || {};
-      if (!reservationId) return res.status(400).json({ error: 'reservationId query param is required' });
+      if (!reservationId)
+        return res.status(400).json({ error: "reservationId query param is required" });
 
       const rows = await sql`
         SELECT
@@ -111,14 +118,19 @@ export default async function handler(req, res) {
         LIMIT 1
       `;
 
-      if (rows.length === 0) return res.status(404).json({ error: 'Consent not found' });
-      return res.status(200).json(rows[0]);
+      if (rows.length === 0)
+        return res.status(404).json({ error: "Consent not found" });
+
+      return res.status(200).json({
+        ...rows[0],
+        user,
+      });
     }
 
-    res.setHeader('Allow', 'GET,POST,OPTIONS');
-    return res.status(405).json({ error: 'Method Not Allowed' });
+    res.setHeader("Allow", "GET,POST,OPTIONS");
+    return res.status(405).json({ error: "Method Not Allowed" });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: "Server error" });
   }
 }
