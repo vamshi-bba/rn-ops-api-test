@@ -18,9 +18,11 @@ export default async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  // 🔒 Verify Microsoft Entra JWT
-  const user = await verifyToken(req, res);
-  if (!user) return; // verifyToken already sent a 401 response
+  if (req.method === "POST") {
+    // 🔒 Verify Microsoft Entra JWT
+    const user = await verifyToken(req, res);
+    if (!user) return; // verifyToken already sent a 401 response
+  }
 
   try {
     // ------------------------------------------------------------------------
