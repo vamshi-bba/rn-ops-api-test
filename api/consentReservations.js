@@ -17,8 +17,8 @@ export default async function handler(req, res) {
   }
 
   // 🔒 Validate Microsoft Entra JWT
-  const user = await verifyToken(req, res);
-  if (!user) return; // verifyToken already responded with 401 if invalid
+  //const user = await verifyToken(req, res);
+  //if (!user) return; // verifyToken already responded with 401 if invalid
 
   try {
     const sql = neon(process.env.DATABASE_URL);
@@ -85,8 +85,8 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       data,
-      count: data.length,
-      user, // 🔎 remove in prod if you don’t want to expose claims
+      count: data.length
+      //user, // 🔎 remove in prod if you don’t want to expose claims
     });
   } catch (err) {
     console.error("consentReservations error:", err);
