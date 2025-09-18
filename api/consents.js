@@ -64,7 +64,6 @@ export default async function handler(req, res) {
             "fullName, termsText, termsVersion, signatureBase64 are required",
         });
       }
-
       // convert base64 -> bytea
       const sigBytes = Buffer.from(
         signatureBase64.includes(",")
