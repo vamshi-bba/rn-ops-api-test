@@ -187,7 +187,7 @@ export default async function handler(req, res) {
               signature_image = EXCLUDED.signature_image
             RETURNING id, created_at, terms_version, geo_location
           `,
-            [reservation_uuid, fullName, termsText, termsVersion, termsAndConditions, geoLocation, sigBytes]
+            [reservation_uuid, fullName, termsText, termsVersion, geoLocation, sigBytes]
           );
           consentRow = consent.rows[0];
         } else {
@@ -200,7 +200,7 @@ export default async function handler(req, res) {
               VALUES ($1,$2,$3,$4,$5,$6)
               RETURNING id, created_at, terms_version, geo_location
             `,
-              [reservation_uuid, fullName, termsText, termsVersion, termsAndConditions, geoLocation, sigBytes]
+              [reservation_uuid, fullName, termsText, termsVersion, geoLocation, sigBytes]
             );
             consentRow = consent.rows[0];
           } catch (e) {
