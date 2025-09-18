@@ -23,7 +23,7 @@ export default async function handler(req, res) {
   if (req.method === "POST") {
     // 🔒 Verify Microsoft Entra JWT
     user = await verifyToken(req, res);
-    if (!user) return; // verifyToken already sent a 401 response
+    if (!user) return; // 401 already sent
   }
 
   try {
@@ -32,8 +32,8 @@ export default async function handler(req, res) {
     // ------------------------------------------------------------------------
     if (req.method === "POST") {
       const {
-        reservation, // full Signet reservation object
-        products = [], // services array
+        reservation,
+        products = [],
         fullName,
         termsText,
         termsVersion,
@@ -64,6 +64,7 @@ export default async function handler(req, res) {
             "fullName, termsText, termsVersion, signatureBase64 are required",
         });
       }
+
       // convert base64 -> bytea
       const sigBytes = Buffer.from(
         signatureBase64.includes(",")
@@ -171,22 +172,23 @@ export default async function handler(req, res) {
           );
         }
 
-        // 3) Insert/Upsert consent
+        // 3) Insert/Upsert consent (with hardcoded channel)
         let consentRow;
         if (overwrite) {
           const consent = await client.query(
             `
             INSERT INTO public.consents (
-              reservation_id, full_name, terms_and_conditions, terms_version, geo_location, signature_image, created_at
+              reservation_id, full_name, terms_and_conditions, terms_version, geo_location, channel, signature_image, created_at
             )
-            VALUES ($1,$2,$3,$4,$5,$6, now())
+            VALUES ($1,$2,$3,$4,$5,'Mobile App',$6, now())
             ON CONFLICT (reservation_id) DO UPDATE SET
               full_name = EXCLUDED.full_name,
               terms_and_conditions = EXCLUDED.terms_and_conditions,
               terms_version = EXCLUDED.terms_version,
               geo_location = EXCLUDED.geo_location,
+              channel = 'Mobile App',
               signature_image = EXCLUDED.signature_image
-            RETURNING id, created_at, terms_version, geo_location
+            RETURNING id, created_at, terms_version, geo_location, channel
           `,
             [reservation_uuid, fullName, termsText, termsVersion, geoLocation, sigBytes]
           );
@@ -196,10 +198,10 @@ export default async function handler(req, res) {
             const consent = await client.query(
               `
               INSERT INTO public.consents (
-                reservation_id, full_name, terms_and_conditions, terms_version, geo_location, signature_image
+                reservation_id, full_name, terms_and_conditions, terms_version, geo_location, channel, signature_image
               )
-              VALUES ($1,$2,$3,$4,$5,$6)
-              RETURNING id, created_at, terms_version, geo_location
+              VALUES ($1,$2,$3,$4,$5,'Mobile App',$6)
+              RETURNING id, created_at, terms_version, geo_location, channel
             `,
               [reservation_uuid, fullName, termsText, termsVersion, geoLocation, sigBytes]
             );
@@ -224,6 +226,7 @@ export default async function handler(req, res) {
             id: consentRow.id,
             termsVersion: consentRow.terms_version,
             geoLocation: consentRow.geo_location,
+            channel: consentRow.channel,
             createdAt: consentRow.created_at,
           },
           user,
@@ -237,7 +240,7 @@ export default async function handler(req, res) {
     }
 
     // ------------------------------------------------------------------------
-    // GET: Fetch reservation, services, consent
+    // GET: Fetch reservation, services, consent (with base mapping lookup)
     // ------------------------------------------------------------------------
     if (req.method === "GET") {
       const { reservationId, includeSignature } = req.query || {};
@@ -270,6 +273,7 @@ export default async function handler(req, res) {
             c.terms_version,
             c.terms_and_conditions,
             c.geo_location,
+            c.channel,
             c.created_at               AS consent_created_at,
             ${includeSignature ? "encode(c.signature_image,'base64')" : "NULL"} AS signature,
             rs.id                      AS service_id,
@@ -280,10 +284,26 @@ export default async function handler(req, res) {
             rs.service_date,
             rs.vendor_name,
             rs.quoted_price,
-            rs.special_instruction_value
+            rs.special_instruction_value,
+            bm.company_code,
+            bm.base_number,
+            bm.iata,
+            bm.icao,
+            bm.region,
+            bm.business_division,
+            bm.base_description,
+            bm.fbo_name,
+            bm.city,
+            bm.state,
+            bm.active,
+            bm.currency_code,
+            bm.default_units,
+            bm.base_country,
+            bm.base_time_zone
           FROM public.reservations r
           LEFT JOIN public.consents c ON c.reservation_id = r.id
           LEFT JOIN public.reservation_services rs ON rs.reservation_id = r.id
+          LEFT JOIN public.base_mapping bm ON bm.base_id = r.base_id
           WHERE r.reservation_no = $1
           ORDER BY rs.created_at ASC
           `,
@@ -297,6 +317,8 @@ export default async function handler(req, res) {
         }
 
         const rows = result.rows;
+
+        // --- reservation ---
         const reservation = {
           reservationId: rows[0].reservation_no,
           baseId: rows[0].base_id,
@@ -312,6 +334,28 @@ export default async function handler(req, res) {
           actualDeparture: rows[0].act_departure_at,
         };
 
+        // --- baseDetails from mapping ---
+        const baseDetails = rows[0].company_code
+          ? {
+              companyCode: rows[0].company_code,
+              baseNumber: rows[0].base_number,
+              iata: rows[0].iata,
+              icao: rows[0].icao,
+              region: rows[0].region,
+              businessDivision: rows[0].business_division,
+              baseDescription: rows[0].base_description,
+              fboName: rows[0].fbo_name,
+              city: rows[0].city,
+              state: rows[0].state,
+              active: rows[0].active,
+              currencyCode: rows[0].currency_code,
+              defaultUnits: rows[0].default_units,
+              baseCountry: rows[0].base_country,
+              baseTimeZone: rows[0].base_time_zone,
+            }
+          : null;
+
+        // --- consent ---
         const consent = rows[0].consent_id
           ? {
               id: rows[0].consent_id,
@@ -319,11 +363,13 @@ export default async function handler(req, res) {
               termsVersion: rows[0].terms_version,
               termsAndConditions: rows[0].terms_and_conditions,
               geoLocation: rows[0].geo_location,
+              channel: rows[0].channel,
               createdAt: rows[0].consent_created_at,
               signature: rows[0].signature,
             }
           : null;
 
+        // --- services ---
         const services = [];
         for (const row of rows) {
           if (row.service_id) {
@@ -343,6 +389,7 @@ export default async function handler(req, res) {
 
         return res.status(200).json({
           reservation,
+          baseDetails,
           services,
           consent,
         });
