@@ -77,20 +77,22 @@ export default async function handler(req, res) {
                       <td>${s.productName}</td>
                       <td>${s.quantity}</td>
                       <td>${s.serviceDate}</td>
-                      <td>$${s.quotedPrice}</td>
+                      <td>$${Number(s.quotedPrice || 0).toFixed(2)}</td>
                     </tr>`
                 )
                 .join("")}
               <tr>
                 <td colspan="3" style="text-align:right"><b>Estimated Total</b></td>
-                <td><b>$${data.services.reduce((sum, s) => sum + s.quotedPrice, 0).toFixed(2)}</b></td>
+                <td><b>$${data.services
+                  .reduce((sum, s) => sum + Number(s.quotedPrice || 0), 0)
+                  .toFixed(2)}</b></td>
               </tr>
             </tbody>
           </table>
         </div>
 
         <div class="terms">
-          <h2>Terms & Conditions ${data.termsVersion}</h2>
+          <h2>Terms & Conditions ${data.termsVersion || ""}</h2>
           <p>${data.terms}</p>
         </div>
 
@@ -112,7 +114,6 @@ export default async function handler(req, res) {
     </html>
     `;
 
-    // Launch Chromium in serverless mode
     const browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
@@ -128,8 +129,7 @@ export default async function handler(req, res) {
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", "inline; filename=consent.pdf");
-    res.statusCode = 200;
-    res.end(pdfBuffer);
+    res.status(200).end(pdfBuffer);
   } catch (err) {
     console.error("PDF generation failed:", err);
     res.status(500).json({ error: "Failed to generate PDF" });
