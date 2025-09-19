@@ -31,7 +31,7 @@ export default async function handler(req, res) {
       <body>
         <div class="header">
           <h1>Reservation Consent</h1>
-          <img src="https://www.signatureaviation.com/themes/custom/signature/logo.svg" class="logo" />
+          <img src="https://www.signatureaviation.com/content/dam/signatureaviation/SignatureAviation_Logo_White.png" class="logo" />
         </div>
 
         <div class="section">
@@ -56,7 +56,10 @@ export default async function handler(req, res) {
           <h2>Flight Information</h2>
           <div class="grid">
             <p><b>Type:</b> ${data.aircraftType}</p>
-            <p><b>Arrival:</b> ${data.arrival}</p>
+            <p><b>Estimated Arrival:</b> ${data.estimatedArrival}</p>
+            <p><b>Actual Arrival:</b> ${data.actualArrival}</p>
+            <p><b>Estimated Departure:</b> ${data.estimatedDeparture}</p>
+            <p><b>Actual Departure:</b> ${data.actualDeparture}</p>
           </div>
         </div>
 
@@ -71,23 +74,23 @@ export default async function handler(req, res) {
                 .map(
                   (s) =>
                     `<tr>
-                      <td>${s.product}</td>
+                      <td>${s.productName}</td>
                       <td>${s.quantity}</td>
-                      <td>${s.date}</td>
-                      <td>$${s.price}</td>
+                      <td>${s.serviceDate}</td>
+                      <td>$${s.quotedPrice}</td>
                     </tr>`
                 )
                 .join("")}
               <tr>
                 <td colspan="3" style="text-align:right"><b>Estimated Total</b></td>
-                <td><b>$${data.services.reduce((sum, s) => sum + s.price, 0).toFixed(2)}</b></td>
+                <td><b>$${data.services.reduce((sum, s) => sum + s.quotedPrice, 0).toFixed(2)}</b></td>
               </tr>
             </tbody>
           </table>
         </div>
 
         <div class="terms">
-          <h2>Terms & Conditions</h2>
+          <h2>Terms & Conditions ${data.termsVersion}</h2>
           <p>${data.terms}</p>
         </div>
 
