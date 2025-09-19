@@ -12,8 +12,8 @@ importers:
         specifier: ^1.0.1
         version: 1.0.1
       '@sparticuz/chromium-min':
-        specifier: ^138.0.2
-        version: 138.0.2
+        specifier: ^122.0.0
+        version: 122.0.0
       jsonwebtoken:
         specifier: ^9.0.2
         version: 9.0.2
@@ -35,9 +35,9 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  '@sparticuz/chromium-min@138.0.2':
-    resolution: {integrity: sha512-L+QzPHJlm4TYOwIGIhIGg7P9zO6bmWJJP+nBpb+Hh0EySJhXi1bAEU61zcAj5S4Lc0F/JFA4EF8b5qXZfIBO7A==}
-    engines: {node: '>=20.11.0'}
+  '@sparticuz/chromium-min@122.0.0':
+    resolution: {integrity: sha512-0EcOK6JqCA4iAutAQbAQPkJXLMXxkJ/jVJgQc7xz3rPgecLOpu8zji286qYthe/ux7YxtVAVlRHJeg1n2EVWiw==}
+    engines: {node: '>= 16'}
 
   '@tootallnate/quickjs-emscripten@0.23.0':
     resolution: {integrity: sha512-C5Mc6rdnsaJDjO3UpGW/CQTHtCKaYlScZTly4JIu97Jxo/odCiH0ITnDXSJPTOrEKk/ycSZ0AOgTmkDtkOsvIA==}
@@ -524,7 +524,7 @@ snapshots:
       - react-native-b4a
       - supports-color
 
-  '@sparticuz/chromium-min@138.0.2':
+  '@sparticuz/chromium-min@122.0.0':
     dependencies:
       follow-redirects: 1.15.11
       tar-fs: 3.1.1
