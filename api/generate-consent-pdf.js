@@ -29,13 +29,11 @@ export default async function handler(req, res) {
         </style>
       </head>
       <body>
-        <!-- Header -->
         <div class="header">
           <h1>Reservation Consent</h1>
           <img src="https://www.signatureaviation.com/themes/custom/signature/logo.svg" class="logo" />
         </div>
 
-        <!-- Reservation -->
         <div class="section">
           <h2>Reservation Details</h2>
           <div class="grid">
@@ -46,7 +44,6 @@ export default async function handler(req, res) {
           </div>
         </div>
 
-        <!-- Customer -->
         <div class="section">
           <h2>Customer Information</h2>
           <div class="grid">
@@ -55,7 +52,6 @@ export default async function handler(req, res) {
           </div>
         </div>
 
-        <!-- Flight -->
         <div class="section">
           <h2>Flight Information</h2>
           <div class="grid">
@@ -64,7 +60,6 @@ export default async function handler(req, res) {
           </div>
         </div>
 
-        <!-- Services -->
         <div class="section">
           <h2>Service Details</h2>
           <table>
@@ -91,13 +86,11 @@ export default async function handler(req, res) {
           </table>
         </div>
 
-        <!-- Terms -->
         <div class="terms">
           <h2>Terms & Conditions</h2>
           <p>${data.terms}</p>
         </div>
 
-        <!-- Signature -->
         <div class="signature">
           <h2>Customer Signature</h2>
           ${
@@ -121,7 +114,7 @@ export default async function handler(req, res) {
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath(),
-      headless: true,
+      headless: chromium.headless,
     });
 
     const page = await browser.newPage();
@@ -131,10 +124,11 @@ export default async function handler(req, res) {
     await browser.close();
 
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", "attachment; filename=consent.pdf");
-    res.send(pdfBuffer);
+    res.setHeader("Content-Disposition", "inline; filename=consent.pdf");
+    res.statusCode = 200;
+    res.end(pdfBuffer);
   } catch (err) {
-    console.error(err);
+    console.error("PDF generation failed:", err);
     res.status(500).json({ error: "Failed to generate PDF" });
   }
 }
