@@ -40,7 +40,7 @@ export default async function handler(req, res) {
             <p><b>ID:</b> ${data.reservationId}</p>
             <p><b>Status:</b> ${data.status}</p>
             <p><b>Tail:</b> ${data.tailNumber}</p>
-            <p><b>Name:</b> ${data.reservationName}</p>
+            <p><b>Reservation Name:</b> ${data.reservationName}</p>
           </div>
         </div>
 
@@ -56,6 +56,7 @@ export default async function handler(req, res) {
           <h2>Flight Information</h2>
           <div class="grid">
             <p><b>Type:</b> ${data.aircraftType}</p>
+            <br/>
             <p><b>Estimated Arrival:</b> ${data.estimatedArrival}</p>
             <p><b>Actual Arrival:</b> ${data.actualArrival}</p>
             <p><b>Estimated Departure:</b> ${data.estimatedDeparture}</p>
@@ -70,23 +71,25 @@ export default async function handler(req, res) {
               <tr><th>Product</th><th>Qty</th><th>Service Date</th><th>Quoted Price</th></tr>
             </thead>
             <tbody>
-              ${data.services
+            ${data.services
                 .map(
-                  (s) =>
-                    `<tr>
-                      <td>${s.productName}</td>
-                      <td>${s.quantity}</td>
-                      <td>${s.serviceDate}</td>
-                      <td>$${Number(s.quotedPrice || 0).toFixed(2)}</td>
-                    </tr>`
+                (s) => {
+                    const price = parseFloat(s.quotedPrice ?? 0) || 0;
+                    return `<tr>
+                    <td>${s.productName}</td>
+                    <td>${s.quantity}</td>
+                    <td>${s.serviceDate}</td>
+                    <td>$${price.toFixed(2)}</td>
+                    </tr>`;
+                }
                 )
                 .join("")}
-              <tr>
+            <tr>
                 <td colspan="3" style="text-align:right"><b>Estimated Total</b></td>
                 <td><b>$${data.services
-                  .reduce((sum, s) => sum + Number(s.quotedPrice || 0), 0)
-                  .toFixed(2)}</b></td>
-              </tr>
+                .reduce((sum, s) => sum + (parseFloat(s.quotedPrice ?? 0) || 0), 0)
+                .toFixed(2)}</b></td>
+            </tr>
             </tbody>
           </table>
         </div>
