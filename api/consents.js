@@ -53,7 +53,7 @@ export default async function handler(req, res) {
       const status =
         reservation?.status ?? reservation?.reservationStatus ?? null;
       const fboName = reservation?.fboName ?? null;
-      const resCreatedDate = reservation?.createdDate ?? null;
+      const resCreatedDate = reservation?.resCreatedDate ?? null;
       const flightName = reservation?.flightName ?? null;
       const flightModel = reservation?.flightModel ?? null;
       const flightType = reservation?.flightType ?? null;
