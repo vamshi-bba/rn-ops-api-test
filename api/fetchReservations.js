@@ -9,12 +9,12 @@ const cors = (res) => {
 };
 
 // --- Utility to fetch Signet reservations ---
-async function fetchFromSignet({ requestorId, companyAccountNumber, startDate, endDate }) {
-  const url = new URL(`${process.env.SIGNET_API_URL}/ops/v1/dashboard/fbo-operations`);
-  url.searchParams.set("requestor-id", requestorId);
-  url.searchParams.set("company-account-number", companyAccountNumber);
+async function fetchFromSignet({ startDate, endDate, baseIds, officeLocation }) {
+  const url = new URL(`${process.env.SIGNET_API_URL}/fbo/GetReservationCasesUsingBase`);
   url.searchParams.set("startDate", startDate);
   url.searchParams.set("endDate", endDate);
+  url.searchParams.set("baseIds", baseIds); // e.g. "\"SNN\",\"P08\""
+  if (officeLocation) url.searchParams.set("officeLocation", officeLocation);
 
   const resp = await fetch(url.toString(), {
     headers: {
@@ -24,7 +24,8 @@ async function fetchFromSignet({ requestorId, companyAccountNumber, startDate, e
   });
 
   if (!resp.ok) {
-    throw new Error(`Signet API error: ${resp.status} ${resp.statusText}`);
+    const errorText = await resp.text();
+    throw new Error(`Signet API error: ${resp.status} ${resp.statusText} - ${errorText}`);
   }
   return resp.json();
 }
@@ -45,19 +46,22 @@ export default async function handler(req, res) {
     const sql = neon(process.env.DATABASE_URL);
 
     // --- Extract query params ---
-    const { requestorId, companyAccountNumber, startDate, endDate } = req.query;
-    if (!requestorId || !companyAccountNumber || !startDate || !endDate) {
+    const { startDate, endDate, baseIds, officeLocation } = req.query;
+    if (!startDate || !endDate) {
       return res.status(400).json({
-        error: "requestorId, companyAccountNumber, startDate, and endDate are required query params",
+        error: "startDate and endDate are required query params",
+      });
+    }
+
+    if (!baseIds && !officeLocation) {
+      return res.status(400).json({
+        error: "either baseIds or officeLocation must be provided",
       });
     }
 
     // --- 1) Fetch from Signet ---
     const signetResp = await fetchFromSignet({
-      requestorId,
-      companyAccountNumber,
-      startDate,
-      endDate,
+      startDate, endDate, baseIds, officeLocation
     });
 
     const reservations = signetResp?.data || [];
@@ -93,6 +97,7 @@ export default async function handler(req, res) {
 
     // --- 3) Merge consent into reservation objects ---
     const data = reservations.map((r) => {
+      const flight = r.flightDetails || {};
       const base = {
         baseId: r.baseid,
         reservationId: r.reservationid,
@@ -103,6 +108,11 @@ export default async function handler(req, res) {
         arrivalDetails: r.arrivalDetails,
         departureDetails: r.departureDetails,
         products: r.products || [],
+        fboName: r.fboName ?? null,
+        resCreatedDate: r.createdDate ?? null,
+        flightName: flight.name ?? null,
+        flightModel: flight.model ?? null,
+        flightType: flight.flightType ?? null,
       };
       const consent = consentMap.get(r.reservationid);
       if (consent) base.consent = consent;

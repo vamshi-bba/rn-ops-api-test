@@ -16,13 +16,12 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  // 🔒 Validate Microsoft Entra JWT
-  //const user = await verifyToken(req, res);
-  //if (!user) return; // verifyToken already responded with 401 if invalid
+  // 🔒 Validate Microsoft Entra JWT (can re-enable later)
+  // const user = await verifyToken(req, res);
+  // if (!user) return;
 
   try {
     const sql = neon(process.env.DATABASE_URL);
-
     const { searchText } = req.query || {};
     const likePattern = searchText ? `%${searchText}%` : null;
 
@@ -40,6 +39,11 @@ export default async function handler(req, res) {
         r.act_arrival_at           AS "actualArrival",
         r.est_departure_at         AS "estimatedDeparture",
         r.act_departure_at         AS "actualDeparture",
+        r.fbo_name                 AS "fboName",
+        r.res_created_date         AS "resCreatedDate",
+        r.flight_name              AS "flightName",
+        r.flight_model             AS "flightModel",
+        r.flight_type              AS "flightType",
         c.id                       AS "consentId",
         c.full_name                AS "consentName",
         c.terms_version            AS "termsVersion",
@@ -72,6 +76,11 @@ export default async function handler(req, res) {
       actualArrival: row.actualArrival,
       estimatedDeparture: row.estimatedDeparture,
       actualDeparture: row.actualDeparture,
+      fboName: row.fboName,
+      resCreatedDate: row.resCreatedDate,
+      flightName: row.flightName,
+      flightModel: row.flightModel,
+      flightType: row.flightType,
       consent: row.consentId
         ? {
             id: row.consentId,
@@ -85,8 +94,8 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       data,
-      count: data.length
-      //user, // 🔎 remove in prod if you don’t want to expose claims
+      count: data.length,
+      // user, // optionally include
     });
   } catch (err) {
     console.error("consentReservations error:", err);

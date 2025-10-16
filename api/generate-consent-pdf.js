@@ -37,30 +37,33 @@ export default async function handler(req, res) {
         <div class="section">
           <h2>Reservation Details</h2>
           <div class="grid">
-            <p><b>ID:</b> ${data.reservationId}</p>
+            <p><b>Reservation ID:</b> ${data.reservationId}</p>
             <p><b>Status:</b> ${data.status}</p>
-            <p><b>Tail:</b> ${data.tailNumber}</p>
+            <p><b>Tail Number:</b> ${data.tailNumber}</p>
             <p><b>Reservation Name:</b> ${data.reservationName}</p>
+            <p><b>Base ID:</b> ${data.baseId || "-"}</p>
+            <p><b>Reservation Created:</b> ${data.resCreatedDate ? new Date(data.resCreatedDate).toLocaleString() : "-"}</p>
           </div>
         </div>
 
         <div class="section">
           <h2>Customer Information</h2>
           <div class="grid">
-            <p><b>Name:</b> ${data.customerName}</p>
-            <p><b>FBO:</b> ${data.fboName}</p>
+            <p><b>Customer Name:</b> ${data.customerName || "-"}</p>
+            <p><b>FBO:</b> ${data.fboName || "-"}</p>
           </div>
         </div>
 
         <div class="section">
           <h2>Flight Information</h2>
           <div class="grid">
-            <p><b>Type:</b> ${data.aircraftType}</p>
-            <br/>
-            <p><b>Estimated Arrival:</b> ${data.estimatedArrival}</p>
-            <p><b>Actual Arrival:</b> ${data.actualArrival}</p>
-            <p><b>Estimated Departure:</b> ${data.estimatedDeparture}</p>
-            <p><b>Actual Departure:</b> ${data.actualDeparture}</p>
+            <p><b>Flight Name:</b> ${data.flightName || "-"}</p>
+            <p><b>Model:</b> ${data.flightModel || "-"}</p>
+            <p><b>Type:</b> ${data.flightType || "-"}</p>
+            <p><b>Estimated Arrival:</b> ${data.estimatedArrival || "-"}</p>
+            <p><b>Actual Arrival:</b> ${data.actualArrival || "-"}</p>
+            <p><b>Estimated Departure:</b> ${data.estimatedDeparture || "-"}</p>
+            <p><b>Actual Departure:</b> ${data.actualDeparture || "-"}</p>
           </div>
         </div>
 
@@ -71,24 +74,22 @@ export default async function handler(req, res) {
               <tr><th>Product</th><th>Qty</th><th>Service Date</th><th>Quoted Price</th></tr>
             </thead>
             <tbody>
-            ${data.services
-                .map(
-                (s) => {
+            ${Array.isArray(data.services) && data.services.length
+              ? data.services
+                  .map((s) => {
                     const price = parseFloat(s.quotedPrice ?? 0) || 0;
                     return `<tr>
-                    <td>${s.productName}</td>
-                    <td>${s.quantity}</td>
-                    <td>${s.serviceDate}</td>
-                    <td>$${price.toFixed(2)}</td>
+                      <td>${s.productName || "-"}</td>
+                      <td>${s.quantity || "-"}</td>
+                      <td>${s.serviceDate || "-"}</td>
+                      <td>$${price.toFixed(2)}</td>
                     </tr>`;
-                }
-                )
-                .join("")}
+                  })
+                  .join("")
+              : `<tr><td colspan="4" style="text-align:center">No Services Found</td></tr>`}
             <tr>
-                <td colspan="3" style="text-align:right"><b>Estimated Total</b></td>
-                <td><b>$${data.services
-                .reduce((sum, s) => sum + (parseFloat(s.quotedPrice ?? 0) || 0), 0)
-                .toFixed(2)}</b></td>
+              <td colspan="3" style="text-align:right"><b>Estimated Total</b></td>
+              <td><b>$${(data.services || []).reduce((sum, s) => sum + (parseFloat(s.quotedPrice ?? 0) || 0), 0).toFixed(2)}</b></td>
             </tr>
             </tbody>
           </table>
@@ -96,7 +97,7 @@ export default async function handler(req, res) {
 
         <div class="terms">
           <h2>Terms & Conditions ${data.termsVersion || ""}</h2>
-          <p>${data.terms}</p>
+          <p>${data.terms || "No terms provided."}</p>
         </div>
 
         <div class="signature">
@@ -106,7 +107,7 @@ export default async function handler(req, res) {
               ? `<img src="data:image/png;base64,${data.signatureBase64}" />`
               : "<p>[Signature Not Provided]</p>"
           }
-          <p><b>Name:</b> ${data.customerName}</p>
+          <p><b>Name:</b> ${data.customerName || "-"}</p>
           <p><b>Date:</b> ${new Date().toLocaleDateString()}</p>
         </div>
 

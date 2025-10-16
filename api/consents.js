@@ -52,6 +52,11 @@ export default async function handler(req, res) {
       const tailNumber = reservation?.tailNumber ?? null;
       const status =
         reservation?.status ?? reservation?.reservationStatus ?? null;
+      const fboName = reservation?.fboName ?? null;
+      const resCreatedDate = reservation?.createdDate ?? null;
+      const flightName = reservation?.flightName ?? null;
+      const flightModel = reservation?.flightModel ?? null;
+      const flightType = reservation?.flightType ?? null;
 
       if (!reservationNo) {
         return res
@@ -96,9 +101,14 @@ export default async function handler(req, res) {
             act_arrival_at,
             est_departure_at,
             act_departure_at,
+            fbo_name,
+            res_created_date,
+            flight_name,
+            flight_model,
+            flight_type,
             updated_at
           )
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now())
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, now())
           ON CONFLICT (reservation_no) DO UPDATE SET
             base_id = EXCLUDED.base_id,
             reservation_name = EXCLUDED.reservation_name,
@@ -109,6 +119,11 @@ export default async function handler(req, res) {
             act_arrival_at = EXCLUDED.act_arrival_at,
             est_departure_at = EXCLUDED.est_departure_at,
             act_departure_at = EXCLUDED.act_departure_at,
+            fbo_name = EXCLUDED.fbo_name,
+            res_created_date = EXCLUDED.res_created_date,
+            flight_name = EXCLUDED.flight_name,
+            flight_model = EXCLUDED.flight_model,
+            flight_type = EXCLUDED.flight_type,
             updated_at = now()
           RETURNING id
         `,
@@ -123,6 +138,11 @@ export default async function handler(req, res) {
             nullIfEmpty(reservation?.arrivalDetails?.actualArrivalTimeUTC),
             nullIfEmpty(reservation?.departureDetails?.estimatedDepartureTimeUTC),
             nullIfEmpty(reservation?.departureDetails?.actualDepartureTimeUTC),
+            fboName,
+            resCreatedDate,
+            flightName,
+            flightModel,
+            flightType,
           ]
         );
         const reservation_uuid = resv.rows[0].id;
@@ -268,6 +288,11 @@ export default async function handler(req, res) {
             r.act_arrival_at,
             r.est_departure_at,
             r.act_departure_at,
+            r.fbo_name,
+            r.res_created_date,
+            r.flight_name,
+            r.flight_model,
+            r.flight_type,
             c.id                       AS consent_id,
             c.full_name,
             c.terms_version,
@@ -292,7 +317,7 @@ export default async function handler(req, res) {
             bm.region,
             bm.business_division,
             bm.base_description,
-            bm.fbo_name,
+            bm.fbo_name                AS bm_fbo_name,
             bm.city,
             bm.state,
             bm.active,
@@ -332,6 +357,11 @@ export default async function handler(req, res) {
           actualArrival: rows[0].act_arrival_at,
           estimatedDeparture: rows[0].est_departure_at,
           actualDeparture: rows[0].act_departure_at,
+          fboName: rows[0].fbo_name,
+          resCreatedDate: rows[0].res_created_date,
+          flightName: rows[0].flight_name,
+          flightModel: rows[0].flight_model,
+          flightType: rows[0].flight_type,
         };
 
         // --- baseDetails from mapping ---
@@ -344,7 +374,7 @@ export default async function handler(req, res) {
               region: rows[0].region,
               businessDivision: rows[0].business_division,
               baseDescription: rows[0].base_description,
-              fboName: rows[0].fbo_name,
+              fboName: rows[0].bm_fbo_name,
               city: rows[0].city,
               state: rows[0].state,
               active: rows[0].active,
