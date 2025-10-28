@@ -9,7 +9,7 @@ const client = jwksClient({
 function getKey(header, callback) {
   client.getSigningKey(header.kid, (err, key) => {
     if (err) {
-      console.error("❌ JWKS key fetch error:", err);
+      console.error("JWKS key fetch error:", err);
       return callback(err);
     }
     const signingKey = key.getPublicKey();
@@ -53,7 +53,7 @@ export async function verifyToken(req, res) {
       },
       (err, decoded) => {
         if (err) {
-          console.error("❌ JWT verification failed:", err.message);
+          console.error("JWT verification failed:", err.message);
           res.status(401).json({
             error:
               err.name === "TokenExpiredError"
@@ -62,7 +62,7 @@ export async function verifyToken(req, res) {
           });
           resolve(null);
         } else {
-          console.log("✅ JWT verified successfully for user:", decoded.sub);
+          console.log("JWT verified successfully for user:", decoded.sub);
           resolve(decoded);
         }
       }
