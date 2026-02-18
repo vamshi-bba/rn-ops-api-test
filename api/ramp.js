@@ -20,6 +20,41 @@ async function requireAuth(req, res) {
   return { enabled: true, user };
 }
 
+// ✅ Normalize JSON input for json/jsonb columns.
+// - Accepts objects/arrays directly
+// - Accepts JSON strings and parses them
+// - Returns JSON string to send to Postgres
+function toJson(value) {
+  if (value == null) return null;
+
+  // If already object/array, stringify directly
+  if (typeof value === "object") return JSON.stringify(value);
+
+  // If string, allow stringified JSON (common in Postman mistakes / CSV imports)
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      return JSON.stringify(parsed);
+    } catch (e) {
+      // Return a special marker so we can throw a clean 400
+      return "__INVALID_JSON_STRING__";
+    }
+  }
+
+  // Any other type is invalid for json/jsonb
+  return "__INVALID_JSON_STRING__";
+}
+
+function assertValidJsonField(res, fieldName, jsonValue) {
+  if (jsonValue === "__INVALID_JSON_STRING__") {
+    jsonError(res, 400, `${fieldName} must be a valid JSON object/array or JSON string`);
+    return false;
+  }
+  return true;
+}
+
 async function resolveRampId(sql, payload) {
   if (payload?.rampId) return payload.rampId;
 
@@ -62,9 +97,6 @@ export default async function handler(req, res) {
 
   const sql = neon(process.env.RAMP_DATABASE_URL);
 
-  // Router inputs (POC-friendly)
-  // resource: ramps | zones | spots
-  // action: list | get | create | upload | update | delete
   const { resource, action = "list", id } = req.query || {};
   if (!resource) return jsonError(res, 400, "resource is required (ramps|zones|spots)");
 
@@ -102,6 +134,9 @@ export default async function handler(req, res) {
           if (!r[k]) return jsonError(res, 400, `${k} is required`);
         }
 
+        const latLonJson = toJson(r.latLon);
+        if (!assertValidJsonField(res, "latLon", latLonJson)) return;
+
         const rows = await sql`
           INSERT INTO public.ramps (
             iata, base_id, source_type, ramp_name, square_footage, lat_lon,
@@ -111,11 +146,22 @@ export default async function handler(req, res) {
             report_parking_use, remote_parking_reason
           )
           VALUES (
-            ${r.iata}, ${r.baseId}, ${r.sourceType}, ${r.rampName}, ${r.squareFootage ?? null}, ${r.latLon ?? null},
-            ${r.totalUnitsInclReserved ?? null}, ${r.reservedUnits ?? null},
-            ${r.maxWeightMtowLbs ?? null}, ${r.minWingspanFt ?? null}, ${r.maxWingspanFt ?? null}, ${r.maxHeightFt ?? null},
-            ${r.minLengthFt ?? null}, ${r.maxLengthFt ?? null},
-            ${r.reportParkingUse ?? false}, ${r.remoteParkingReason ?? null}
+            ${r.iata},
+            ${r.baseId},
+            ${r.sourceType},
+            ${r.rampName},
+            ${r.squareFootage ?? null},
+            ${latLonJson},
+            ${r.totalUnitsInclReserved ?? null},
+            ${r.reservedUnits ?? null},
+            ${r.maxWeightMtowLbs ?? null},
+            ${r.minWingspanFt ?? null},
+            ${r.maxWingspanFt ?? null},
+            ${r.maxHeightFt ?? null},
+            ${r.minLengthFt ?? null},
+            ${r.maxLengthFt ?? null},
+            ${r.reportParkingUse ?? false},
+            ${r.remoteParkingReason ?? null}
           )
           RETURNING *
         `;
@@ -132,6 +178,9 @@ export default async function handler(req, res) {
             if (!r?.[k]) return jsonError(res, 400, `Missing ${k} in one of items`);
           }
 
+          const latLonJson = toJson(r.latLon);
+          if (!assertValidJsonField(res, "latLon", latLonJson)) return;
+
           const rows = await sql`
             INSERT INTO public.ramps (
               iata, base_id, source_type, ramp_name, square_footage, lat_lon,
@@ -141,11 +190,22 @@ export default async function handler(req, res) {
               report_parking_use, remote_parking_reason
             )
             VALUES (
-              ${r.iata}, ${r.baseId}, ${r.sourceType}, ${r.rampName}, ${r.squareFootage ?? null}, ${r.latLon ?? null},
-              ${r.totalUnitsInclReserved ?? null}, ${r.reservedUnits ?? null},
-              ${r.maxWeightMtowLbs ?? null}, ${r.minWingspanFt ?? null}, ${r.maxWingspanFt ?? null}, ${r.maxHeightFt ?? null},
-              ${r.minLengthFt ?? null}, ${r.maxLengthFt ?? null},
-              ${r.reportParkingUse ?? false}, ${r.remoteParkingReason ?? null}
+              ${r.iata},
+              ${r.baseId},
+              ${r.sourceType},
+              ${r.rampName},
+              ${r.squareFootage ?? null},
+              ${latLonJson},
+              ${r.totalUnitsInclReserved ?? null},
+              ${r.reservedUnits ?? null},
+              ${r.maxWeightMtowLbs ?? null},
+              ${r.minWingspanFt ?? null},
+              ${r.maxWingspanFt ?? null},
+              ${r.maxHeightFt ?? null},
+              ${r.minLengthFt ?? null},
+              ${r.maxLengthFt ?? null},
+              ${r.reportParkingUse ?? false},
+              ${r.remoteParkingReason ?? null}
             )
             ${
               mode === "upsert"
@@ -177,6 +237,9 @@ export default async function handler(req, res) {
         if (!id) return jsonError(res, 400, "id is required");
         const r = req.body || {};
 
+        const latLonJson = toJson(r.latLon);
+        if (!assertValidJsonField(res, "latLon", latLonJson)) return;
+
         const rows = await sql`
           UPDATE public.ramps SET
             iata = COALESCE(${r.iata ?? null}, iata),
@@ -184,7 +247,7 @@ export default async function handler(req, res) {
             source_type = COALESCE(${r.sourceType ?? null}, source_type),
             ramp_name = COALESCE(${r.rampName ?? null}, ramp_name),
             square_footage = COALESCE(${r.squareFootage ?? null}, square_footage),
-            lat_lon = COALESCE(${r.latLon ?? null}, lat_lon),
+            lat_lon = COALESCE(${latLonJson}, lat_lon),
             total_units_incl_reserved = COALESCE(${r.totalUnitsInclReserved ?? null}, total_units_incl_reserved),
             reserved_units = COALESCE(${r.reservedUnits ?? null}, reserved_units),
             max_weight_mtow_lbs = COALESCE(${r.maxWeightMtowLbs ?? null}, max_weight_mtow_lbs),
@@ -251,6 +314,9 @@ export default async function handler(req, res) {
         const parent = await sql`SELECT iata, base_id, ramp_name FROM public.ramps WHERE id = ${rampId} LIMIT 1`;
         if (!parent[0]) return jsonError(res, 404, "Ramp not found");
 
+        const latLonJson = toJson(z.latLon);
+        if (!assertValidJsonField(res, "latLon", latLonJson)) return;
+
         const rows = await sql`
           INSERT INTO public.zones (
             ramp_id, iata, base_id, ramp_name, zone_name,
@@ -262,7 +328,7 @@ export default async function handler(req, res) {
           )
           VALUES (
             ${rampId}, ${parent[0].iata}, ${parent[0].base_id}, ${parent[0].ramp_name}, ${z.zoneName},
-            ${z.squareFootage ?? null}, ${z.utilizationRatePct ?? null}, ${z.latLon ?? null},
+            ${z.squareFootage ?? null}, ${z.utilizationRatePct ?? null}, ${latLonJson},
             ${z.totalUnitsInclReserved ?? null}, ${z.reservedUnits ?? null},
             ${z.maxWeightMtowLbs ?? null}, ${z.minWingspanFt ?? null}, ${z.maxWingspanFt ?? null}, ${z.maxHeightFt ?? null},
             ${z.minLengthFt ?? null}, ${z.maxLengthFt ?? null},
@@ -287,6 +353,9 @@ export default async function handler(req, res) {
           const parent = await sql`SELECT iata, base_id, ramp_name FROM public.ramps WHERE id = ${rampId} LIMIT 1`;
           if (!parent[0]) return jsonError(res, 404, "Ramp not found for one of items");
 
+          const latLonJson = toJson(z.latLon);
+          if (!assertValidJsonField(res, "latLon", latLonJson)) return;
+
           const rows = await sql`
             INSERT INTO public.zones (
               ramp_id, iata, base_id, ramp_name, zone_name,
@@ -298,7 +367,7 @@ export default async function handler(req, res) {
             )
             VALUES (
               ${rampId}, ${parent[0].iata}, ${parent[0].base_id}, ${parent[0].ramp_name}, ${z.zoneName},
-              ${z.squareFootage ?? null}, ${z.utilizationRatePct ?? null}, ${z.latLon ?? null},
+              ${z.squareFootage ?? null}, ${z.utilizationRatePct ?? null}, ${latLonJson},
               ${z.totalUnitsInclReserved ?? null}, ${z.reservedUnits ?? null},
               ${z.maxWeightMtowLbs ?? null}, ${z.minWingspanFt ?? null}, ${z.maxWingspanFt ?? null}, ${z.maxHeightFt ?? null},
               ${z.minLengthFt ?? null}, ${z.maxLengthFt ?? null},
@@ -337,12 +406,15 @@ export default async function handler(req, res) {
         if (!id) return jsonError(res, 400, "id is required");
         const z = req.body || {};
 
+        const latLonJson = toJson(z.latLon);
+        if (!assertValidJsonField(res, "latLon", latLonJson)) return;
+
         const rows = await sql`
           UPDATE public.zones SET
             zone_name = COALESCE(${z.zoneName ?? null}, zone_name),
             square_footage = COALESCE(${z.squareFootage ?? null}, square_footage),
             utilization_rate_pct = COALESCE(${z.utilizationRatePct ?? null}, utilization_rate_pct),
-            lat_lon = COALESCE(${z.latLon ?? null}, lat_lon),
+            lat_lon = COALESCE(${latLonJson}, lat_lon),
             total_units_incl_reserved = COALESCE(${z.totalUnitsInclReserved ?? null}, total_units_incl_reserved),
             reserved_units = COALESCE(${z.reservedUnits ?? null}, reserved_units),
             max_weight_mtow_lbs = COALESCE(${z.maxWeightMtowLbs ?? null}, max_weight_mtow_lbs),
@@ -373,6 +445,8 @@ export default async function handler(req, res) {
     // =========================
     // SPOTS
     // =========================
+    // NOTE: Spots table doesn't have lat_lon, so no change needed here.
+
     if (resource === "spots") {
       if (req.method === "GET" && action === "list") {
         const { zoneId, rampId, iata, baseId, rampName, zoneName, spotName, limit } = req.query || {};
