@@ -71,7 +71,7 @@ export default async function handler(req, res) {
           <h2>Service Details</h2>
           <table>
             <thead>
-              <tr><th>Product</th><th>Qty</th><th>Service Date</th><th>Quoted Price</th></tr>
+              <tr><th>Product</th><th>Qty</th><th>Service Date</th></tr>
             </thead>
             <tbody>
             ${Array.isArray(data.services) && data.services.length
@@ -82,15 +82,10 @@ export default async function handler(req, res) {
                       <td>${s.productName || "-"}</td>
                       <td>${s.quantity || "-"}</td>
                       <td>${s.serviceDate || "-"}</td>
-                      <td>$${price.toFixed(2)}</td>
                     </tr>`;
                   })
                   .join("")
               : `<tr><td colspan="4" style="text-align:center">No Services Found</td></tr>`}
-            <tr>
-              <td colspan="3" style="text-align:right"><b>Estimated Total</b></td>
-              <td><b>$${(data.services || []).reduce((sum, s) => sum + (parseFloat(s.quotedPrice ?? 0) || 0), 0).toFixed(2)}</b></td>
-            </tr>
             </tbody>
           </table>
         </div>
