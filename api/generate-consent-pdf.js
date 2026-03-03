@@ -57,9 +57,9 @@ export default async function handler(req, res) {
         <div class="section">
           <h2>Flight Information</h2>
           <div class="grid">
-            <p><b>Flight Name:</b> ${data.flightName || "-"}</p>
-            <p><b>Model:</b> ${data.flightModel || "-"}</p>
-            <p><b>Type:</b> ${data.flightType || "-"}</p>
+            <p><b>Aircraft Name:</b> ${data.flightName || "-"}</p>
+            <p><b>Aircraft Model:</b> ${data.flightModel || "-"}</p>
+            <p><b>Aircraft Type:</b> ${data.flightType || "-"}</p>
             <p><b>Estimated Arrival:</b> ${data.estimatedArrival || "-"}</p>
             <p><b>Actual Arrival:</b> ${data.actualArrival || "-"}</p>
             <p><b>Estimated Departure:</b> ${data.estimatedDeparture || "-"}</p>
