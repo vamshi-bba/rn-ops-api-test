@@ -103,7 +103,7 @@ export default async function handler(req, res) {
               : "<p>[Signature Not Provided]</p>"
           }
           <p><b>Name:</b> ${data.customerName || "-"}</p>
-          <p><b>Date:</b> ${new Date().toLocaleDateString()}</p>
+          <p><b>Date:</b> ${data.resCreatedDate ? new Date(data.resCreatedDate).toLocaleString() : "-"}</p>
         </div>
 
         <div class="footer">
